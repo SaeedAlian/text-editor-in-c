@@ -1,0 +1,3 @@
+/home/entropy/projects/text-editor-in-c/CMakeFiles/main.o.dir
+/home/entropy/projects/text-editor-in-c/CMakeFiles/edit_cache.dir
+/home/entropy/projects/text-editor-in-c/CMakeFiles/rebuild_cache.dir
