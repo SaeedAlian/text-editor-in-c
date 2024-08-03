@@ -158,7 +158,11 @@ void process_key_press() {
 
 void draw_rows() {
   for (int y = 0; y < config.rows; y++) {
-    write(STDOUT_FILENO, "~\r\n", 3);
+    write(STDOUT_FILENO, "~", 1);
+
+    if (y < config.rows - 1) {
+      write(STDOUT_FILENO, "\r\n", 2);
+    }
   }
 }
 
