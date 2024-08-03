@@ -6,7 +6,11 @@
 #include <termios.h>
 #include <unistd.h>
 
+/* Macros and definitions */
+
 #define CTRL_KEY(k) ((k) & 0x1f)
+
+/* Editor config */
 
 struct conf {
   int rows;
@@ -15,6 +19,8 @@ struct conf {
 };
 
 struct conf config;
+
+/* Function declarations */
 
 void draw_rows();
 void clear_screen();
@@ -29,6 +35,8 @@ char read_input_key();
 void process_key_press();
 void init();
 
+/* Main functions */
+
 int main() {
   enable_raw_mode();
   init();
@@ -40,6 +48,8 @@ int main() {
 
   return 0;
 }
+
+/* Function definitions */
 
 int get_cursor_pos(int *rows, int *cols) {
   char buf[32];
