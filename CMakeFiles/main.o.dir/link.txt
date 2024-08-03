@@ -1,1 +1,0 @@
-/usr/bin/cc CMakeFiles/main.o.dir/main.c.o -o out/main.o 
