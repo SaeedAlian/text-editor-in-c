@@ -7,11 +7,11 @@
 #include <termios.h>
 #include <unistd.h>
 
-/* Macros and definitions */
+/* ------ Macros and definitions ------ */
 
 #define CTRL_KEY(k) ((k) & 0x1f)
 
-/* Editor config */
+/* ------ Editor config ------ */
 
 struct conf {
   int rows;
@@ -21,7 +21,7 @@ struct conf {
 
 struct conf config;
 
-/* Appendable buffer */
+/* ------ Appendable buffer ------ */
 
 struct ap_buf {
   char *b;
@@ -30,26 +30,122 @@ struct ap_buf {
 
 #define AP_BUF_INIT {NULL, 0}
 
-/* Function declarations */
+/* ------ Function declarations ------ */
 
+/* --- appendable buffer --- */
+
+/*
+ * append a string to the appendable buffer. It will receive
+ * the buffer struct pointer, new string and the new string length.
+ */
 void ap_buf_append(struct ap_buf *buf, const char *s, int len);
+
+/*
+ * free the buffer of the appendable buffer struct. It will receive
+ * the buffer struct pointer.
+ */
 void free_ap_buf(struct ap_buf *buf);
+
+/* --- screen update --- */
+
+/*
+ * Draw tildes on the left side of the screen.
+ * It will receive the appendable buffer pointer.
+ */
 void draw_rows(struct ap_buf *buf);
+
+/*
+ * Clears the entire terminal screen.
+ * It will receive the appendable buffer pointer.
+ */
 void clear_screen(struct ap_buf *buf);
+
+/*
+ * Moves the cursor to the top left of the terminal screen.
+ * It will receive the appendable buffer pointer.
+ */
 void move_cursor_to_top(struct ap_buf *buf);
+
+/*
+ * It will force write to the screen to clear it.
+ * The difference of this between the clear_screen, is that
+ * this function will use the write function immediately,
+ * and it won't use the appendable buffer.
+ */
 void write_clear_screen();
+
+/*
+ * It will force write to the screen to move the cursor to the top left.
+ * The difference of this between the move_cursor_to_top, is that
+ * this function will use the write function immediately,
+ * and it won't use the appendable buffer.
+ */
 void write_move_cursor_to_top();
+
+/*
+ * Refresh the screen by first clearing it,
+ * then move the cursor to the top and draw the leftside
+ * tildes, and the move the cursor to the top again.
+ * It will use the appendable buffer to do all of this with
+ * a single write to the screen.
+ */
 void refresh_screen();
+
+/* --- get screen info --- */
+
+/*
+ * Gets the cursor position in the screen and copy the
+ * values in the rows and cols parameters which it receives.
+ */
 int get_cursor_pos(int *rows, int *cols);
+
+/*
+ * Gets the terminal size and copy the values
+ * in the rows and cols parameters which it receives.
+ */
 int get_term_size(int *rows, int *cols);
-void die(const char *s);
+
+/* --- raw mode --- */
+
+/*
+ * Disables the raw mode in the terminal
+ */
 void disable_raw_mode();
+
+/*
+ * Enables the raw mode in the terminal
+ */
 void enable_raw_mode();
+
+/* --- key press event handlers --- */
+
+/*
+ * Reads each key press and returns the character which has been pressed.
+ */
 char read_input_key();
+
+/*
+ * Reads the pressed key, then assign the special keys to certain actions.
+ */
 void process_key_press();
+
+/* --- error handling --- */
+
+/*
+ * Clears the screen, moves the cursor to the top,
+ * and prints the error on the screen and then sends the exit signal.
+ * It will receive the error string.
+ */
+void die(const char *s);
+
+/* --- init function --- */
+
+/*
+ * Initializes the editor configuration.
+ */
 void init();
 
-/* Main functions */
+/* --- Main function --- */
 
 int main() {
   enable_raw_mode();
@@ -63,13 +159,22 @@ int main() {
   return 0;
 }
 
-/* Function definitions */
+/* ------ Function definitions ------ */
+
+void clear_screen(struct ap_buf *buf) { ap_buf_append(buf, "\x1b[2J", 4); }
+
+void move_cursor_to_top(struct ap_buf *buf) { ap_buf_append(buf, "\x1b[H", 3); }
+
+void write_clear_screen() { write(STDIN_FILENO, "\x1b[2J", 4); }
+
+void write_move_cursor_to_top() { write(STDIN_FILENO, "\x1b[H", 3); }
 
 void ap_buf_append(struct ap_buf *buf, const char *s, int len) {
   char *new = realloc(buf->b, buf->len + len);
 
   if (new == NULL)
     return;
+
   memcpy(&new[buf->len], s, len);
   buf->b = new;
   buf->len += len;
@@ -81,6 +186,11 @@ int get_cursor_pos(int *rows, int *cols) {
   char buf[32];
   unsigned int i = 0;
 
+  // the 'n' command (Device Status Report) will
+  // give the terminal status information
+  // and with the argument '6' it will give the
+  // cursor position and it can be read from the
+  // standard input.
   if (write(STDIN_FILENO, "\x1b[6n", 4) != 4)
     return -1;
 
@@ -115,11 +225,14 @@ int get_term_size(int *rows, int *cols) {
   }
 }
 
-void die(const char *s) {
-  write_clear_screen();
-  write_move_cursor_to_top();
-  perror(s);
-  exit(1);
+void draw_rows(struct ap_buf *buf) {
+  for (int y = 0; y < config.rows; y++) {
+    ap_buf_append(buf, "~", 1);
+
+    if (y < config.rows - 1) {
+      ap_buf_append(buf, "\r\n", 2);
+    }
+  }
 }
 
 void refresh_screen() {
@@ -170,14 +283,6 @@ char read_input_key() {
   return c;
 }
 
-void clear_screen(struct ap_buf *buf) { ap_buf_append(buf, "\x1b[2J", 4); }
-
-void move_cursor_to_top(struct ap_buf *buf) { ap_buf_append(buf, "\x1b[H", 3); }
-
-void write_clear_screen() { write(STDIN_FILENO, "\x1b[2J", 4); }
-
-void write_move_cursor_to_top() { write(STDIN_FILENO, "\x1b[H", 3); }
-
 void process_key_press() {
   char key = read_input_key();
 
@@ -191,14 +296,11 @@ void process_key_press() {
   }
 }
 
-void draw_rows(struct ap_buf *buf) {
-  for (int y = 0; y < config.rows; y++) {
-    ap_buf_append(buf, "~", 1);
-
-    if (y < config.rows - 1) {
-      ap_buf_append(buf, "\r\n", 2);
-    }
-  }
+void die(const char *s) {
+  write_clear_screen();
+  write_move_cursor_to_top();
+  perror(s);
+  exit(1);
 }
 
 void init() {
