@@ -46,7 +46,9 @@ enum editor_keys {
   ARROW_UP,
   ARROW_DOWN,
   PAGE_UP,
-  PAGE_DOWN
+  PAGE_DOWN,
+  HOME_KEY,
+  END_KEY
 };
 
 /* ------ Appendable buffer ------ */
@@ -495,10 +497,18 @@ int read_input_key() {
 
         if (esc[2] == '~') {
           switch (esc[1]) {
+          case '1':
+            return HOME_KEY;
+          case '4':
+            return END_KEY;
           case '5':
             return PAGE_UP;
           case '6':
             return PAGE_DOWN;
+          case '7':
+            return HOME_KEY;
+          case '8':
+            return END_KEY;
           }
         }
 
@@ -512,7 +522,18 @@ int read_input_key() {
           return ARROW_RIGHT;
         case 'D':
           return ARROW_LEFT;
+        case 'H':
+          return HOME_KEY;
+        case 'F':
+          return END_KEY;
         }
+      }
+    } else if (esc[0] == 'O') {
+      switch (esc[1]) {
+      case 'H':
+        return HOME_KEY;
+      case 'F':
+        return END_KEY;
       }
     }
 
@@ -532,6 +553,14 @@ void process_key_press() {
     exit(0);
     break;
   }
+
+  case HOME_KEY:
+    config.cx = 0;
+    break;
+  case END_KEY:
+    if (config.cy < config.numrows)
+      config.cx = config.editor_rows[config.cy].size;
+    break;
 
   case PAGE_UP:
   case PAGE_DOWN: {
