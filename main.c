@@ -25,6 +25,13 @@ struct conf {
 
 struct conf config;
 
+enum editor_keys {
+  ARROW_LEFT = 'a',
+  ARROW_RIGHT = 'd',
+  ARROW_UP = 'w',
+  ARROW_DOWN = 's'
+};
+
 /* ------ Appendable buffer ------ */
 
 struct ap_buf {
@@ -59,37 +66,49 @@ void free_ap_buf(struct ap_buf *buf);
 void draw_rows(struct ap_buf *buf);
 
 /*
- * Clears the entire terminal screen.
- * It will receive the appendable buffer pointer.
- */
-void clear_screen(struct ap_buf *buf);
-
-/*
- * Moves the cursor to the top left of the terminal screen.
- * It will receive the appendable buffer pointer.
- */
-void move_cursor_to_top(struct ap_buf *buf);
-
-/*
  * It will force write to the screen to clear it.
- * The difference of this between the clear_screen, is that
- * this function will use the write function immediately,
+ * This function will use the write function immediately,
  * and it won't use the appendable buffer.
  */
-void write_clear_screen();
+void clear_screen();
 
 /*
- * It will force write to the screen to move the cursor to the top left.
- * The difference of this between the move_cursor_to_top, is that
- * this function will use the write function immediately,
+ * It will force write to the screen to move the cursor to the given position.
+ * This function will use the write function immediately,
  * and it won't use the appendable buffer.
+ * It will receive the x and y of the position
  */
-void write_move_cursor_to_top();
+void move_cursor(int x, int y);
 
 /*
- * Refresh the screen by first clearing it,
- * then move the cursor to the top and draw the leftside
- * tildes, and the move the cursor to the top again.
+ *
+ */
+void update_cursor_pos(char key) {
+  switch (key) {
+  case ARROW_RIGHT: {
+    config.cx++;
+    break;
+  }
+  case ARROW_LEFT: {
+    config.cx--;
+    break;
+  }
+  case ARROW_UP: {
+    config.cy--;
+    break;
+  }
+  case ARROW_DOWN: {
+    config.cy++;
+    break;
+  }
+  }
+}
+
+/*
+ * Refresh the screen by first hiding the cursor,
+ * then move the cursor to the top of screen
+ * and draw the leftside tildes (clears each line before drawing),
+ * and the move the cursor to the defined position in the config struct.
  * It will use the appendable buffer to do all of this with
  * a single write to the screen.
  */
@@ -165,13 +184,13 @@ int main() {
 
 /* ------ Function definitions ------ */
 
-void clear_screen(struct ap_buf *buf) { ap_buf_append(buf, "\x1b[2J", 4); }
+void clear_screen() { write(STDIN_FILENO, "\x1b[2J", 4); }
 
-void move_cursor_to_top(struct ap_buf *buf) { ap_buf_append(buf, "\x1b[H", 3); }
-
-void write_clear_screen() { write(STDIN_FILENO, "\x1b[2J", 4); }
-
-void write_move_cursor_to_top() { write(STDIN_FILENO, "\x1b[H", 3); }
+void move_cursor(int x, int y) {
+  char temp_buf[32];
+  snprintf(temp_buf, sizeof(temp_buf), "\x1b[%d;%dH", y + 1, x + 1);
+  write(STDIN_FILENO, temp_buf, strlen(temp_buf));
+}
 
 void ap_buf_append(struct ap_buf *buf, const char *s, int len) {
   char *new = realloc(buf->b, buf->len + len);
@@ -252,7 +271,9 @@ void draw_rows(struct ap_buf *buf) {
       ap_buf_append(buf, "~", 1);
     }
 
+    // clears each line
     ap_buf_append(buf, "\x1b[K", 3);
+
     if (y < config.rows - 1) {
       ap_buf_append(buf, "\r\n", 2);
     }
@@ -262,10 +283,22 @@ void draw_rows(struct ap_buf *buf) {
 void refresh_screen() {
   struct ap_buf buf = AP_BUF_INIT;
 
-  clear_screen(&buf);
-  move_cursor_to_top(&buf);
+  // hides the cursor
+  ap_buf_append(&buf, "\x1b[?25l", 6);
+
+  // moves cursor to the top
+  ap_buf_append(&buf, "\x1b[H", 3);
+
   draw_rows(&buf);
-  move_cursor_to_top(&buf);
+
+  // moves cursor to the defined position in the config struct
+  char temp_buf[32];
+  snprintf(temp_buf, sizeof(temp_buf), "\x1b[%d;%dH", config.cy + 1,
+           config.cx + 1);
+  ap_buf_append(&buf, temp_buf, strlen(temp_buf));
+
+  // shows the cursor
+  ap_buf_append(&buf, "\x1b[?25h", 6);
 
   write(STDIN_FILENO, buf.b, buf.len);
   free_ap_buf(&buf);
@@ -312,22 +345,32 @@ void process_key_press() {
 
   switch (key) {
   case CTRL_KEY('q'): {
-    write_clear_screen();
-    write_move_cursor_to_top();
+    clear_screen();
+    move_cursor(0, 0);
     exit(0);
     break;
   }
+
+  case ARROW_UP:
+  case ARROW_DOWN:
+  case ARROW_LEFT:
+  case ARROW_RIGHT:
+    update_cursor_pos(key);
+    break;
   }
 }
 
 void die(const char *s) {
-  write_clear_screen();
-  write_move_cursor_to_top();
+  clear_screen();
+  move_cursor(0, 0);
   perror(s);
   exit(1);
 }
 
 void init() {
+  config.cx = 0;
+  config.cy = 0;
+
   if (get_term_size(&config.rows, &config.cols) == -1)
     die("get_term_size");
 }
