@@ -25,12 +25,7 @@ struct conf {
 
 struct conf config;
 
-enum editor_keys {
-  ARROW_LEFT = 'a',
-  ARROW_RIGHT = 'd',
-  ARROW_UP = 'w',
-  ARROW_DOWN = 's'
-};
+enum editor_keys { ARROW_LEFT = 1000, ARROW_RIGHT, ARROW_UP, ARROW_DOWN };
 
 /* ------ Appendable buffer ------ */
 
@@ -83,7 +78,7 @@ void move_cursor(int x, int y);
 /*
  *
  */
-void update_cursor_pos(char key) {
+void update_cursor_pos(int key) {
   switch (key) {
   case ARROW_RIGHT: {
     config.cx++;
@@ -145,7 +140,7 @@ void enable_raw_mode();
 /*
  * Reads each key press and returns the character which has been pressed.
  */
-char read_input_key();
+int read_input_key();
 
 /*
  * Reads the pressed key, then assign the special keys to certain actions.
@@ -328,7 +323,7 @@ void enable_raw_mode() {
     die("tcsetattr");
 }
 
-char read_input_key() {
+int read_input_key() {
   int nread;
   char c;
 
@@ -337,11 +332,35 @@ char read_input_key() {
       die("read");
   }
 
+  if (c == '\x1b') {
+    char esc[3];
+
+    if (read(STDIN_FILENO, &esc[0], 1) != 1)
+      return '\x1b';
+    if (read(STDIN_FILENO, &esc[1], 1) != 1)
+      return '\x1b';
+
+    if (esc[0] == '[') {
+      switch (esc[1]) {
+      case 'A':
+        return ARROW_UP;
+      case 'B':
+        return ARROW_DOWN;
+      case 'C':
+        return ARROW_RIGHT;
+      case 'D':
+        return ARROW_LEFT;
+      }
+    }
+
+    return '\x1b';
+  }
+
   return c;
 }
 
 void process_key_press() {
-  char key = read_input_key();
+  int key = read_input_key();
 
   switch (key) {
   case CTRL_KEY('q'): {
