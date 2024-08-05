@@ -76,28 +76,12 @@ void clear_screen();
 void move_cursor(int x, int y);
 
 /*
- *
+ * Updates the cursor position based on the given key,
+ * to left, right, up or down.
+ * It will update the cx and cy values in the editor config.
+ * It will receives the pressed key as a parameter.
  */
-void update_cursor_pos(int key) {
-  switch (key) {
-  case ARROW_RIGHT: {
-    config.cx++;
-    break;
-  }
-  case ARROW_LEFT: {
-    config.cx--;
-    break;
-  }
-  case ARROW_UP: {
-    config.cy--;
-    break;
-  }
-  case ARROW_DOWN: {
-    config.cy++;
-    break;
-  }
-  }
-}
+void update_cursor_pos(int key);
 
 /*
  * Refresh the screen by first hiding the cursor,
@@ -321,6 +305,27 @@ void enable_raw_mode() {
 
   if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1)
     die("tcsetattr");
+}
+
+void update_cursor_pos(int key) {
+  switch (key) {
+  case ARROW_RIGHT: {
+    config.cx++;
+    break;
+  }
+  case ARROW_LEFT: {
+    config.cx--;
+    break;
+  }
+  case ARROW_UP: {
+    config.cy--;
+    break;
+  }
+  case ARROW_DOWN: {
+    config.cy++;
+    break;
+  }
+  }
 }
 
 int read_input_key() {
