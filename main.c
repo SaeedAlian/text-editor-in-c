@@ -32,6 +32,7 @@ struct conf {
   int rows;
   int cols;
   int rowoff;
+  int coloff;
   int numrows;
   erow *editor_rows;
   struct termios orig_termios;
@@ -114,8 +115,8 @@ void move_cursor(int x, int y);
 void update_cursor_pos(int key);
 
 /*
- * Updates the scrolling offset when cy reaches to the bottom
- * or the top of the terminal screen.
+ * Updates the coloff or rowoff variables from the config,
+ * when the cx or cy reaches to the edge of the screen.
  */
 void update_scroll();
 
@@ -314,10 +315,14 @@ void draw_rows(struct ap_buf *buf) {
         ap_buf_append(buf, "~", 1);
       }
     } else {
-      int len = config.editor_rows[filerow].size;
+      int len = config.editor_rows[filerow].size - config.coloff;
+      if (len < 0)
+        len = 0;
       if (len > config.cols)
         len = config.cols;
-      ap_buf_append(buf, config.editor_rows[filerow].chars, len);
+
+      ap_buf_append(buf, &config.editor_rows[filerow].chars[config.coloff],
+                    len);
     }
 
     // clears each line
@@ -337,6 +342,14 @@ void update_scroll() {
   if (config.cy >= config.rowoff + config.rows) {
     config.rowoff = config.cy - config.rows + 1;
   }
+
+  if (config.cx < config.coloff) {
+    config.coloff = config.cx;
+  }
+
+  if (config.cx >= config.coloff + config.cols) {
+    config.coloff = config.cx - config.cols + 1;
+  }
 }
 
 void refresh_screen() {
@@ -355,7 +368,7 @@ void refresh_screen() {
   // moves cursor to the defined position in the config struct
   char temp_buf[32];
   snprintf(temp_buf, sizeof(temp_buf), "\x1b[%d;%dH",
-           config.cy - config.rowoff + 1, config.cx + 1);
+           config.cy - config.rowoff + 1, config.cx - config.coloff + 1);
   ap_buf_append(&buf, temp_buf, strlen(temp_buf));
 
   // shows the cursor
@@ -413,16 +426,25 @@ void editor_open(char *filename) {
 }
 
 void update_cursor_pos(int key) {
+  erow *current_row =
+      config.cy >= config.numrows ? NULL : &config.editor_rows[config.cy];
+
   switch (key) {
   case ARROW_RIGHT: {
-    if (config.cx < config.cols - 1) {
+    if (current_row && config.cx < current_row->size) {
       config.cx++;
+    } else if (current_row && config.cx == current_row->size) {
+      config.cy++;
+      config.cx = 0;
     }
     break;
   }
   case ARROW_LEFT: {
     if (config.cx > 0) {
       config.cx--;
+    } else if (config.cy > 0) {
+      config.cy--;
+      config.cx = config.editor_rows[config.cy].size;
     }
     break;
   }
@@ -438,6 +460,14 @@ void update_cursor_pos(int key) {
     }
     break;
   }
+  }
+
+  current_row =
+      config.cy >= config.numrows ? NULL : &config.editor_rows[config.cy];
+  int rowlen = current_row ? current_row->size : 0;
+
+  if (config.cx > rowlen) {
+    config.cx = rowlen;
   }
 }
 
@@ -535,6 +565,7 @@ void init() {
   config.numrows = 0;
   config.editor_rows = NULL;
   config.rowoff = 0;
+  config.coloff = 0;
 
   if (get_term_size(&config.rows, &config.cols) == -1)
     die("get_term_size");
