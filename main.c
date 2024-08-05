@@ -1,3 +1,7 @@
+#define _DEFAULT_SOURCE
+#define _BSD_SOURCE
+#define _GNU_SOURCE
+
 #include <asm-generic/ioctls.h>
 #include <errno.h>
 #include <stdio.h>
@@ -13,6 +17,13 @@
 
 #define VERSION "0.0.1"
 
+/* ------ Types ------ */
+
+typedef struct erow {
+  int size;
+  char *chars;
+} erow;
+
 /* ------ Editor config ------ */
 
 struct conf {
@@ -20,6 +31,8 @@ struct conf {
   int cy;
   int rows;
   int cols;
+  int numrows;
+  erow *editor_rows;
   struct termios orig_termios;
 };
 
@@ -45,16 +58,25 @@ struct ap_buf {
 
 /* ------ Function declarations ------ */
 
+/* --- editor rows --- */
+
+/*
+ * Appends a new editor row to the editor_row array in the
+ * editor config struct.
+ * It will receive the line string and the line length.
+ */
+void append_erow(char *s, size_t len);
+
 /* --- appendable buffer --- */
 
 /*
- * append a string to the appendable buffer. It will receive
+ * Append a string to the appendable buffer. It will receive
  * the buffer struct pointer, new string and the new string length.
  */
 void ap_buf_append(struct ap_buf *buf, const char *s, int len);
 
 /*
- * free the buffer of the appendable buffer struct. It will receive
+ * Free the buffer of the appendable buffer struct. It will receive
  * the buffer struct pointer.
  */
 void free_ap_buf(struct ap_buf *buf);
@@ -138,6 +160,15 @@ int read_input_key();
  */
 void process_key_press();
 
+/* --- file i/o --- */
+
+/*
+ * Opens a file with the given filename, and then appends
+ * all the lines to the editor_row array.
+ * It will receive the filename as parameter.
+ */
+void editor_open(char *filename);
+
 /* --- error handling --- */
 
 /*
@@ -156,9 +187,13 @@ void init();
 
 /* --- Main function --- */
 
-int main() {
+int main(int argc, char *argv[]) {
   enable_raw_mode();
   init();
+
+  if (argc >= 2) {
+    editor_open(argv[1]);
+  }
 
   while (1) {
     refresh_screen();
@@ -176,6 +211,19 @@ void move_cursor(int x, int y) {
   char temp_buf[32];
   snprintf(temp_buf, sizeof(temp_buf), "\x1b[%d;%dH", y + 1, x + 1);
   write(STDIN_FILENO, temp_buf, strlen(temp_buf));
+}
+
+void append_erow(char *s, size_t len) {
+  config.editor_rows =
+      realloc(config.editor_rows, sizeof(erow) * (config.numrows + 1));
+
+  erow new_row;
+  new_row.size = len;
+  new_row.chars = malloc(len + 1);
+  memcpy(new_row.chars, s, len);
+  new_row.chars[len] = '\0';
+  config.editor_rows[config.numrows] = new_row;
+  config.numrows++;
 }
 
 void ap_buf_append(struct ap_buf *buf, const char *s, int len) {
@@ -237,24 +285,31 @@ int get_term_size(int *rows, int *cols) {
 void draw_rows(struct ap_buf *buf) {
   for (int y = 0; y < config.rows; y++) {
 
-    if (y == config.rows / 3) {
-      char welcome[80];
-      int welcome_len = snprintf(welcome, sizeof(welcome),
-                                 "Text Editor In C - Version %s", VERSION);
+    if (y >= config.numrows) {
+      if (config.numrows == 0 && y == config.rows / 3) {
+        char welcome[80];
+        int welcome_len = snprintf(welcome, sizeof(welcome),
+                                   "Text Editor In C - Version %s", VERSION);
 
-      if (welcome_len > config.cols) {
-        welcome_len = config.cols;
+        if (welcome_len > config.cols) {
+          welcome_len = config.cols;
+        }
+
+        ap_buf_append(buf, "~", 1);
+        for (int i = 0; i < (config.cols - welcome_len) / 2; i++) {
+          ap_buf_append(buf, " ", 1);
+        }
+
+        ap_buf_append(buf, welcome, welcome_len);
+      } else {
+
+        ap_buf_append(buf, "~", 1);
       }
-
-      ap_buf_append(buf, "~", 1);
-      for (int i = 0; i < (config.cols - welcome_len) / 2; i++) {
-        ap_buf_append(buf, " ", 1);
-      }
-
-      ap_buf_append(buf, welcome, welcome_len);
     } else {
-
-      ap_buf_append(buf, "~", 1);
+      int len = config.editor_rows[y].size;
+      if (len > config.cols)
+        len = config.cols;
+      ap_buf_append(buf, config.editor_rows[y].chars, len);
     }
 
     // clears each line
@@ -312,6 +367,29 @@ void enable_raw_mode() {
 
   if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1)
     die("tcsetattr");
+}
+
+void editor_open(char *filename) {
+  FILE *f = fopen(filename, "r");
+
+  if (!f)
+    die("fopen");
+
+  char *line = NULL;
+  size_t linecap = 0;
+  size_t linelen;
+
+  while ((linelen = getline(&line, &linecap, f)) != -1) {
+    while (linelen > 0 &&
+           (line[linelen - 1] == '\n' || line[linelen - 1] == '\r')) {
+      linelen--;
+    }
+
+    append_erow(line, linelen);
+  }
+
+  free(line);
+  fclose(f);
 }
 
 void update_cursor_pos(int key) {
@@ -434,6 +512,8 @@ void die(const char *s) {
 void init() {
   config.cx = 0;
   config.cy = 0;
+  config.numrows = 0;
+  config.editor_rows = NULL;
 
   if (get_term_size(&config.rows, &config.cols) == -1)
     die("get_term_size");
