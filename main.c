@@ -25,7 +25,14 @@ struct conf {
 
 struct conf config;
 
-enum editor_keys { ARROW_LEFT = 1000, ARROW_RIGHT, ARROW_UP, ARROW_DOWN };
+enum editor_keys {
+  ARROW_LEFT = 1000,
+  ARROW_RIGHT,
+  ARROW_UP,
+  ARROW_DOWN,
+  PAGE_UP,
+  PAGE_DOWN
+};
 
 /* ------ Appendable buffer ------ */
 
@@ -322,7 +329,6 @@ void update_cursor_pos(int key) {
     break;
   }
   case ARROW_UP: {
-
     if (config.cy > 0) {
       config.cy--;
     }
@@ -355,15 +361,30 @@ int read_input_key() {
       return '\x1b';
 
     if (esc[0] == '[') {
-      switch (esc[1]) {
-      case 'A':
-        return ARROW_UP;
-      case 'B':
-        return ARROW_DOWN;
-      case 'C':
-        return ARROW_RIGHT;
-      case 'D':
-        return ARROW_LEFT;
+      if (esc[1] >= '0' && esc[1] <= '9') {
+        if (read(STDIN_FILENO, &esc[2], 1) != 1)
+          return '\x1b';
+
+        if (esc[2] == '~') {
+          switch (esc[1]) {
+          case '5':
+            return PAGE_UP;
+          case '6':
+            return PAGE_DOWN;
+          }
+        }
+
+      } else {
+        switch (esc[1]) {
+        case 'A':
+          return ARROW_UP;
+        case 'B':
+          return ARROW_DOWN;
+        case 'C':
+          return ARROW_RIGHT;
+        case 'D':
+          return ARROW_LEFT;
+        }
       }
     }
 
@@ -384,12 +405,22 @@ void process_key_press() {
     break;
   }
 
+  case PAGE_UP:
+  case PAGE_DOWN: {
+    int i = config.rows;
+    while (i--) {
+      update_cursor_pos(key == PAGE_UP ? ARROW_UP : ARROW_DOWN);
+    }
+    break;
+  }
+
   case ARROW_UP:
   case ARROW_DOWN:
   case ARROW_LEFT:
-  case ARROW_RIGHT:
+  case ARROW_RIGHT: {
     update_cursor_pos(key);
     break;
+  }
   }
 }
 
