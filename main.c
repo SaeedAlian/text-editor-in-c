@@ -310,19 +310,28 @@ void enable_raw_mode() {
 void update_cursor_pos(int key) {
   switch (key) {
   case ARROW_RIGHT: {
-    config.cx++;
+    if (config.cx < config.cols - 1) {
+      config.cx++;
+    }
     break;
   }
   case ARROW_LEFT: {
-    config.cx--;
+    if (config.cx > 0) {
+      config.cx--;
+    }
     break;
   }
   case ARROW_UP: {
-    config.cy--;
+
+    if (config.cy > 0) {
+      config.cy--;
+    }
     break;
   }
   case ARROW_DOWN: {
-    config.cy++;
+    if (config.cy < config.rows - 1) {
+      config.cy++;
+    }
     break;
   }
   }
