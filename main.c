@@ -11,9 +11,13 @@
 
 #define CTRL_KEY(k) ((k) & 0x1f)
 
+#define VERSION "0.0.1"
+
 /* ------ Editor config ------ */
 
 struct conf {
+  int cx;
+  int cy;
   int rows;
   int cols;
   struct termios orig_termios;
@@ -227,8 +231,28 @@ int get_term_size(int *rows, int *cols) {
 
 void draw_rows(struct ap_buf *buf) {
   for (int y = 0; y < config.rows; y++) {
-    ap_buf_append(buf, "~", 1);
 
+    if (y == config.rows / 3) {
+      char welcome[80];
+      int welcome_len = snprintf(welcome, sizeof(welcome),
+                                 "Text Editor In C - Version %s", VERSION);
+
+      if (welcome_len > config.cols) {
+        welcome_len = config.cols;
+      }
+
+      ap_buf_append(buf, "~", 1);
+      for (int i = 0; i < (config.cols - welcome_len) / 2; i++) {
+        ap_buf_append(buf, " ", 1);
+      }
+
+      ap_buf_append(buf, welcome, welcome_len);
+    } else {
+
+      ap_buf_append(buf, "~", 1);
+    }
+
+    ap_buf_append(buf, "\x1b[K", 3);
     if (y < config.rows - 1) {
       ap_buf_append(buf, "\r\n", 2);
     }
