@@ -31,6 +31,7 @@ struct conf {
   int cy;
   int rows;
   int cols;
+  int rowoff;
   int numrows;
   erow *editor_rows;
   struct termios orig_termios;
@@ -111,6 +112,12 @@ void move_cursor(int x, int y);
  * It will receives the pressed key as a parameter.
  */
 void update_cursor_pos(int key);
+
+/*
+ * Updates the scrolling offset when cy reaches to the bottom
+ * or the top of the terminal screen.
+ */
+void update_scroll();
 
 /*
  * Refresh the screen by first hiding the cursor,
@@ -284,8 +291,9 @@ int get_term_size(int *rows, int *cols) {
 
 void draw_rows(struct ap_buf *buf) {
   for (int y = 0; y < config.rows; y++) {
+    int filerow = y + config.rowoff;
 
-    if (y >= config.numrows) {
+    if (filerow >= config.numrows) {
       if (config.numrows == 0 && y == config.rows / 3) {
         char welcome[80];
         int welcome_len = snprintf(welcome, sizeof(welcome),
@@ -306,10 +314,10 @@ void draw_rows(struct ap_buf *buf) {
         ap_buf_append(buf, "~", 1);
       }
     } else {
-      int len = config.editor_rows[y].size;
+      int len = config.editor_rows[filerow].size;
       if (len > config.cols)
         len = config.cols;
-      ap_buf_append(buf, config.editor_rows[y].chars, len);
+      ap_buf_append(buf, config.editor_rows[filerow].chars, len);
     }
 
     // clears each line
@@ -321,8 +329,20 @@ void draw_rows(struct ap_buf *buf) {
   }
 }
 
+void update_scroll() {
+  if (config.cy < config.rowoff) {
+    config.rowoff = config.cy;
+  }
+
+  if (config.cy >= config.rowoff + config.rows) {
+    config.rowoff = config.cy - config.rows + 1;
+  }
+}
+
 void refresh_screen() {
   struct ap_buf buf = AP_BUF_INIT;
+
+  update_scroll();
 
   // hides the cursor
   ap_buf_append(&buf, "\x1b[?25l", 6);
@@ -334,8 +354,8 @@ void refresh_screen() {
 
   // moves cursor to the defined position in the config struct
   char temp_buf[32];
-  snprintf(temp_buf, sizeof(temp_buf), "\x1b[%d;%dH", config.cy + 1,
-           config.cx + 1);
+  snprintf(temp_buf, sizeof(temp_buf), "\x1b[%d;%dH",
+           config.cy - config.rowoff + 1, config.cx + 1);
   ap_buf_append(&buf, temp_buf, strlen(temp_buf));
 
   // shows the cursor
@@ -413,7 +433,7 @@ void update_cursor_pos(int key) {
     break;
   }
   case ARROW_DOWN: {
-    if (config.cy < config.rows - 1) {
+    if (config.cy < config.numrows) {
       config.cy++;
     }
     break;
@@ -514,6 +534,7 @@ void init() {
   config.cy = 0;
   config.numrows = 0;
   config.editor_rows = NULL;
+  config.rowoff = 0;
 
   if (get_term_size(&config.rows, &config.cols) == -1)
     die("get_term_size");
