@@ -2,6 +2,7 @@
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
@@ -20,11 +21,24 @@ struct conf {
 
 struct conf config;
 
+/* Appendable buffer */
+
+struct ap_buf {
+  char *b;
+  int len;
+};
+
+#define AP_BUF_INIT {NULL, 0}
+
 /* Function declarations */
 
-void draw_rows();
-void clear_screen();
-void move_cursor_to_top();
+void ap_buf_append(struct ap_buf *buf, const char *s, int len);
+void free_ap_buf(struct ap_buf *buf);
+void draw_rows(struct ap_buf *buf);
+void clear_screen(struct ap_buf *buf);
+void move_cursor_to_top(struct ap_buf *buf);
+void write_clear_screen();
+void write_move_cursor_to_top();
 void refresh_screen();
 int get_cursor_pos(int *rows, int *cols);
 int get_term_size(int *rows, int *cols);
@@ -50,6 +64,18 @@ int main() {
 }
 
 /* Function definitions */
+
+void ap_buf_append(struct ap_buf *buf, const char *s, int len) {
+  char *new = realloc(buf->b, buf->len + len);
+
+  if (new == NULL)
+    return;
+  memcpy(&new[buf->len], s, len);
+  buf->b = new;
+  buf->len += len;
+}
+
+void free_ap_buf(struct ap_buf *buf) { free(buf->b); }
 
 int get_cursor_pos(int *rows, int *cols) {
   char buf[32];
@@ -90,17 +116,22 @@ int get_term_size(int *rows, int *cols) {
 }
 
 void die(const char *s) {
-  clear_screen();
-  move_cursor_to_top();
+  write_clear_screen();
+  write_move_cursor_to_top();
   perror(s);
   exit(1);
 }
 
 void refresh_screen() {
-  clear_screen();
-  move_cursor_to_top();
-  draw_rows();
-  move_cursor_to_top();
+  struct ap_buf buf = AP_BUF_INIT;
+
+  clear_screen(&buf);
+  move_cursor_to_top(&buf);
+  draw_rows(&buf);
+  move_cursor_to_top(&buf);
+
+  write(STDIN_FILENO, buf.b, buf.len);
+  free_ap_buf(&buf);
 }
 
 void disable_raw_mode() {
@@ -139,29 +170,33 @@ char read_input_key() {
   return c;
 }
 
-void clear_screen() { write(STDIN_FILENO, "\x1b[2J", 4); }
+void clear_screen(struct ap_buf *buf) { ap_buf_append(buf, "\x1b[2J", 4); }
 
-void move_cursor_to_top() { write(STDIN_FILENO, "\x1b[H", 3); }
+void move_cursor_to_top(struct ap_buf *buf) { ap_buf_append(buf, "\x1b[H", 3); }
+
+void write_clear_screen() { write(STDIN_FILENO, "\x1b[2J", 4); }
+
+void write_move_cursor_to_top() { write(STDIN_FILENO, "\x1b[H", 3); }
 
 void process_key_press() {
   char key = read_input_key();
 
   switch (key) {
   case CTRL_KEY('q'): {
-    clear_screen();
-    move_cursor_to_top();
+    write_clear_screen();
+    write_move_cursor_to_top();
     exit(0);
     break;
   }
   }
 }
 
-void draw_rows() {
+void draw_rows(struct ap_buf *buf) {
   for (int y = 0; y < config.rows; y++) {
-    write(STDOUT_FILENO, "~", 1);
+    ap_buf_append(buf, "~", 1);
 
     if (y < config.rows - 1) {
-      write(STDOUT_FILENO, "\r\n", 2);
+      ap_buf_append(buf, "\r\n", 2);
     }
   }
 }
