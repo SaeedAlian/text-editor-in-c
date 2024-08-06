@@ -40,6 +40,7 @@ struct conf {
   int coloff;
   int numrows;
   erow *editor_rows;
+  char *filename;
   struct termios orig_termios;
 };
 
@@ -139,6 +140,12 @@ void update_cursor_pos(int key);
  * when the cx or cy reaches to the edge of the screen.
  */
 void update_scroll();
+
+/*
+ * Draws the status line in the bottom of the terminal screen.
+ * It will receive the appendable buffer pointer.
+ */
+void draw_status_line(struct ap_buf *buf);
 
 /*
  * Refresh the screen by first hiding the cursor,
@@ -422,6 +429,37 @@ void update_scroll() {
   }
 }
 
+void draw_status_line(struct ap_buf *buf) {
+  ap_buf_append(buf, "\n", 1);
+  ap_buf_append(buf, "\x1b[7m", 4);
+
+  char status[80], rstatus[80];
+
+  int len =
+      snprintf(status, sizeof(status), "%.20s - %d lines",
+               config.filename ? config.filename : "[No Name]", config.numrows);
+
+  int rlen = snprintf(rstatus, sizeof(rstatus), "%d/%d", config.cy + 1,
+                      config.numrows);
+
+  if (len > config.cols)
+    len = config.cols;
+
+  ap_buf_append(buf, status, len);
+
+  while (len < config.cols) {
+    if (config.cols - len == rlen) {
+      ap_buf_append(buf, rstatus, rlen);
+      break;
+    } else {
+      ap_buf_append(buf, " ", 1);
+      len++;
+    }
+  }
+
+  ap_buf_append(buf, "\x1b[m", 3);
+}
+
 void refresh_screen() {
   struct ap_buf buf = AP_BUF_INIT;
 
@@ -434,6 +472,7 @@ void refresh_screen() {
   ap_buf_append(&buf, "\x1b[H", 3);
 
   draw_rows(&buf);
+  draw_status_line(&buf);
 
   // moves cursor to the defined position in the config struct
   char temp_buf[32];
@@ -473,6 +512,9 @@ void enable_raw_mode() {
 }
 
 void editor_open(char *filename) {
+  free(config.filename);
+  config.filename = strdup(filename);
+
   FILE *f = fopen(filename, "r");
 
   if (!f)
@@ -664,7 +706,10 @@ void init() {
   config.editor_rows = NULL;
   config.rowoff = 0;
   config.coloff = 0;
+  config.filename = NULL;
 
   if (get_term_size(&config.rows, &config.cols) == -1)
     die("get_term_size");
+
+  config.rows -= 2;
 }
