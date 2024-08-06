@@ -17,17 +17,22 @@
 
 #define VERSION "0.0.1"
 
+#define TAB_STOP 4
+
 /* ------ Types ------ */
 
 typedef struct erow {
   int size;
+  int rsize;
   char *chars;
+  char *render;
 } erow;
 
 /* ------ Editor config ------ */
 
 struct conf {
   int cx;
+  int rx;
   int cy;
   int rows;
   int cols;
@@ -70,6 +75,19 @@ struct ap_buf {
  * It will receive the line string and the line length.
  */
 void append_erow(char *s, size_t len);
+
+/*
+ * Formats each row characters, and copy it into
+ * the render field of the row.
+ * It will receive the row pointer.
+ */
+void update_erow(erow *row);
+
+/*
+ * Converts cx into rx by counting the tab stops.
+ * It will receive the row pointer and the current cx.
+ */
+int row_cx_to_rx(erow *row, int cx);
 
 /* --- appendable buffer --- */
 
@@ -230,10 +248,56 @@ void append_erow(char *s, size_t len) {
   erow new_row;
   new_row.size = len;
   new_row.chars = malloc(len + 1);
+  new_row.rsize = 0;
+  new_row.render = NULL;
+
   memcpy(new_row.chars, s, len);
   new_row.chars[len] = '\0';
+  update_erow(&new_row);
   config.editor_rows[config.numrows] = new_row;
+
   config.numrows++;
+}
+
+int row_cx_to_rx(erow *row, int cx) {
+  int rx = 0;
+
+  for (int i = 0; i < cx; i++) {
+    if (row->chars[i] == '\t') {
+      rx += (TAB_STOP - 1) + (rx % TAB_STOP);
+    }
+
+    rx++;
+  }
+
+  return rx;
+}
+
+void update_erow(erow *row) {
+  int tabs = 0;
+
+  for (int i = 0; i < row->size; i++) {
+    if (row->chars[i] == '\t')
+      tabs++;
+  }
+
+  free(row->render);
+  row->render = malloc(row->size + (tabs * (TAB_STOP - 1)) + 1);
+
+  int j = 0;
+  for (int i = 0; i < row->size; i++) {
+    if (row->chars[i] == '\t') {
+      row->render[j++] = ' ';
+
+      while (j % TAB_STOP != 0)
+        row->render[j++] = ' ';
+    } else {
+      row->render[j++] = row->chars[i];
+    }
+  }
+
+  row->render[j] = '\0';
+  row->rsize = j;
 }
 
 void ap_buf_append(struct ap_buf *buf, const char *s, int len) {
@@ -317,26 +381,30 @@ void draw_rows(struct ap_buf *buf) {
         ap_buf_append(buf, "~", 1);
       }
     } else {
-      int len = config.editor_rows[filerow].size - config.coloff;
+      int len = config.editor_rows[filerow].rsize - config.coloff;
       if (len < 0)
         len = 0;
       if (len > config.cols)
         len = config.cols;
 
-      ap_buf_append(buf, &config.editor_rows[filerow].chars[config.coloff],
+      ap_buf_append(buf, &config.editor_rows[filerow].render[config.coloff],
                     len);
     }
 
     // clears each line
     ap_buf_append(buf, "\x1b[K", 3);
 
-    if (y < config.rows - 1) {
-      ap_buf_append(buf, "\r\n", 2);
-    }
+    ap_buf_append(buf, "\r\n", 2);
   }
 }
 
 void update_scroll() {
+  config.rx = 0;
+
+  if (config.cy < config.numrows) {
+    config.rx = row_cx_to_rx(&config.editor_rows[config.cy], config.cx);
+  }
+
   if (config.cy < config.rowoff) {
     config.rowoff = config.cy;
   }
@@ -345,12 +413,12 @@ void update_scroll() {
     config.rowoff = config.cy - config.rows + 1;
   }
 
-  if (config.cx < config.coloff) {
-    config.coloff = config.cx;
+  if (config.rx < config.coloff) {
+    config.coloff = config.rx;
   }
 
-  if (config.cx >= config.coloff + config.cols) {
-    config.coloff = config.cx - config.cols + 1;
+  if (config.rx >= config.coloff + config.cols) {
+    config.coloff = config.rx - config.cols + 1;
   }
 }
 
@@ -370,7 +438,7 @@ void refresh_screen() {
   // moves cursor to the defined position in the config struct
   char temp_buf[32];
   snprintf(temp_buf, sizeof(temp_buf), "\x1b[%d;%dH",
-           config.cy - config.rowoff + 1, config.cx - config.coloff + 1);
+           config.cy - config.rowoff + 1, config.rx - config.coloff + 1);
   ap_buf_append(&buf, temp_buf, strlen(temp_buf));
 
   // shows the cursor
@@ -590,6 +658,7 @@ void die(const char *s) {
 
 void init() {
   config.cx = 0;
+  config.rx = 0;
   config.cy = 0;
   config.numrows = 0;
   config.editor_rows = NULL;
