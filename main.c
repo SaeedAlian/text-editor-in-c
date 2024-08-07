@@ -430,7 +430,6 @@ void update_scroll() {
 }
 
 void draw_status_line(struct ap_buf *buf) {
-  ap_buf_append(buf, "\n", 1);
   ap_buf_append(buf, "\x1b[7m", 4);
 
   char status[80], rstatus[80];
@@ -711,5 +710,5 @@ void init() {
   if (get_term_size(&config.rows, &config.cols) == -1)
     die("get_term_size");
 
-  config.rows -= 2;
+  config.rows -= 1;
 }
