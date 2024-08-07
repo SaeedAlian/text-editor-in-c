@@ -47,6 +47,7 @@ struct conf {
 struct conf config;
 
 enum editor_keys {
+  BACKSPACE = 127,
   ARROW_LEFT = 1000,
   ARROW_RIGHT,
   ARROW_UP,
@@ -54,7 +55,8 @@ enum editor_keys {
   PAGE_UP,
   PAGE_DOWN,
   HOME_KEY,
-  END_KEY
+  END_KEY,
+  DEL_KEY
 };
 
 /* ------ Appendable buffer ------ */
@@ -78,6 +80,13 @@ struct ap_buf {
 void append_erow(char *s, size_t len);
 
 /*
+ * Will delete a row at the given index.
+ * It will free the row and move the rows on step backward.
+ * It will receive the row index.
+ */
+void delete_erow(int at);
+
+/*
  * Formats each row characters, and copy it into
  * the render field of the row.
  * It will receive the row pointer.
@@ -89,6 +98,45 @@ void update_erow(erow *row);
  * It will receive the row pointer and the current cx.
  */
 int row_cx_to_rx(erow *row, int cx);
+
+/*
+ * Inserts a character at the given row and the given
+ * position. It will receive the row pointer, position index,
+ * and the character.
+ */
+void insert_char_at_row(erow *row, int at, char c);
+
+/*
+ * Inserts a string at the given row and the given
+ * position. It will receive the row pointer, position index,
+ * the string and the length of the string.
+ */
+void insert_str_at_row(erow *row, int at, char *c, int len);
+
+/*
+ * Removes a character at the given row and the given position.
+ * It will receive the row pointer and the position index.
+ */
+void remove_char_at_row(erow *row, int at);
+
+/* --- editor operations --- */
+
+/*
+ * Inserts a character in the editor screen by using
+ * the insert_char_at_row function.
+ * If the cursor is at the end of file it will append a row.
+ * It will receive the character.
+ */
+void insert_char(int c);
+
+/*
+ * Deletes a character from the editor screen.
+ * It will delete the character of a row
+ * until there is no character left behind the cursor,
+ * after that it will append the remaining characters after
+ * the cursor to the previous row.
+ */
+void delete_char();
 
 /* --- appendable buffer --- */
 
@@ -266,6 +314,19 @@ void append_erow(char *s, size_t len) {
   config.numrows++;
 }
 
+void delete_erow(int at) {
+  if (at < 0 || at > config.numrows)
+    return;
+
+  erow *row = &config.editor_rows[at];
+
+  free(row->chars);
+  free(row->render);
+  memmove(&config.editor_rows[at], &config.editor_rows[at + 1],
+          sizeof(erow) * (config.numrows - at - 1));
+  config.numrows--;
+}
+
 int row_cx_to_rx(erow *row, int cx) {
   int rx = 0;
 
@@ -278,6 +339,39 @@ int row_cx_to_rx(erow *row, int cx) {
   }
 
   return rx;
+}
+
+void insert_char_at_row(erow *row, int at, char c) {
+  if (at < 0 || at > row->size)
+    at = row->size;
+
+  row->chars = realloc(row->chars, row->size + 2);
+  memmove(&row->chars[at + 1], &row->chars[at], row->size - at + 1);
+  row->size++;
+  row->chars[at] = c;
+  update_erow(row);
+}
+
+void insert_str_at_row(erow *row, int at, char *c, int len) {
+  if (at < 0 || at > row->size)
+    return;
+
+  row->chars = realloc(row->chars, row->size + len + 1);
+
+  memmove(&row->chars[at + len], &row->chars[at], row->size - at + 1);
+  memcpy(&row->chars[at], c, len);
+
+  row->size += len;
+  update_erow(row);
+}
+
+void remove_char_at_row(erow *row, int at) {
+  if (at < 0 || at >= row->size)
+    return;
+
+  memmove(&row->chars[at], &row->chars[at + 1], row->size - at);
+  row->size--;
+  update_erow(row);
 }
 
 void update_erow(erow *row) {
@@ -510,6 +604,40 @@ void enable_raw_mode() {
     die("tcsetattr");
 }
 
+void insert_char(int c) {
+  if (config.cy == config.numrows) {
+    append_erow("", 0);
+  }
+
+  insert_char_at_row(&config.editor_rows[config.cy], config.cx, c);
+  config.cx++;
+}
+
+void delete_char() {
+  if (config.cy == config.numrows)
+    return;
+
+  erow *row = &config.editor_rows[config.cy];
+
+  if (config.cy == 0 && config.cx == 0) {
+    if (row->size == 0)
+      delete_erow(config.cy);
+
+    return;
+  }
+
+  if (config.cx > 0) {
+    remove_char_at_row(row, config.cx - 1);
+    config.cx--;
+  } else {
+    erow *prev_row = &config.editor_rows[config.cy - 1];
+    config.cx = prev_row->size;
+    insert_str_at_row(prev_row, prev_row->size, row->chars, row->size);
+    delete_erow(config.cy);
+    config.cy--;
+  }
+}
+
 void editor_open(char *filename) {
   free(config.filename);
   config.filename = strdup(filename);
@@ -608,6 +736,8 @@ int read_input_key() {
           switch (esc[1]) {
           case '1':
             return HOME_KEY;
+          case '3':
+            return DEL_KEY;
           case '4':
             return END_KEY;
           case '5':
@@ -671,6 +801,15 @@ void process_key_press() {
       config.cx = config.editor_rows[config.cy].size;
     break;
 
+  case DEL_KEY:
+  case BACKSPACE: {
+    if (key == DEL_KEY)
+      update_cursor_pos(ARROW_RIGHT);
+
+    delete_char();
+    break;
+  }
+
   case PAGE_UP:
   case PAGE_DOWN: {
     int i = config.rows;
@@ -685,6 +824,11 @@ void process_key_press() {
   case ARROW_LEFT:
   case ARROW_RIGHT: {
     update_cursor_pos(key);
+    break;
+  }
+
+  default: {
+    insert_char(key);
     break;
   }
   }
