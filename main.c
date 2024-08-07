@@ -4,6 +4,7 @@
 
 #include <asm-generic/ioctls.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -120,6 +121,14 @@ void insert_str_at_row(erow *row, int at, char *c, int len);
 void remove_char_at_row(erow *row, int at);
 
 /* --- editor operations --- */
+
+/*
+ * Converts all editor_rows elements into a one
+ * single buffer, and returns it. Also set the buflen
+ * parameter to the buffer length.
+ * It will receive the buflen parameter and returns a string.
+ */
+char *erows_to_str(int *buflen);
 
 /*
  * Inserts a character in the editor screen by using
@@ -251,6 +260,11 @@ void process_key_press();
  * It will receive the filename as parameter.
  */
 void editor_open(char *filename);
+
+/*
+ * Saves the current buffer into the file.
+ */
+void editor_save();
 
 /* --- error handling --- */
 
@@ -604,6 +618,28 @@ void enable_raw_mode() {
     die("tcsetattr");
 }
 
+char *erows_to_str(int *buflen) {
+  char *buffer = NULL;
+
+  for (int i = 0; i < config.numrows; i++) {
+    erow row = config.editor_rows[i];
+    *buflen += row.size + 1;
+  }
+
+  buffer = malloc(*buflen);
+  char *p = buffer;
+
+  for (int i = 0; i < config.numrows; i++) {
+    erow row = config.editor_rows[i];
+    memcpy(p, row.chars, row.size);
+    p += row.size;
+    *p = '\n';
+    p++;
+  }
+
+  return buffer;
+}
+
 void insert_char(int c) {
   if (config.cy == config.numrows) {
     append_erow("", 0);
@@ -662,6 +698,29 @@ void editor_open(char *filename) {
 
   free(line);
   fclose(f);
+}
+
+void editor_save() {
+  if (config.filename == NULL)
+    return;
+
+  int len;
+  char *buf = erows_to_str(&len);
+
+  int fd = open(config.filename, O_RDWR | O_CREAT, 0644);
+
+  if (fd != -1) {
+    if (ftruncate(fd, len) != -1) {
+      if (write(fd, buf, len) == len) {
+        close(fd);
+        free(buf);
+        return;
+      }
+    }
+    close(fd);
+  }
+
+  free(buf);
 }
 
 void update_cursor_pos(int key) {
@@ -786,6 +845,12 @@ void process_key_press() {
   int key = read_input_key();
 
   switch (key) {
+
+  case CTRL_KEY('w'): {
+    editor_save();
+    break;
+  }
+
   case CTRL_KEY('q'): {
     clear_screen();
     move_cursor(0, 0);
