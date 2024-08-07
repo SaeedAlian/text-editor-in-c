@@ -810,6 +810,14 @@ void process_key_press() {
     break;
   }
 
+  case '\r':
+    /* TODO */
+    break;
+
+  case CTRL_KEY('l'):
+  case '\x1b':
+    break;
+
   case PAGE_UP:
   case PAGE_DOWN: {
     int i = config.rows;
