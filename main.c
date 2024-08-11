@@ -702,12 +702,15 @@ void enable_raw_mode() {
 char *erows_to_str(int *buflen) {
   char *buffer = NULL;
 
+  int total_len = 0;
+
   for (int i = 0; i < config.numrows; i++) {
     erow row = config.editor_rows[i];
-    *buflen += row.size + 1;
+    total_len += row.size + 1;
   }
 
-  buffer = malloc(*buflen);
+  *buflen = total_len;
+  buffer = malloc(total_len);
   char *p = buffer;
 
   for (int i = 0; i < config.numrows; i++) {
