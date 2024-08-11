@@ -875,9 +875,10 @@ void editor_save() {
   char *temp_filename = NULL;
 
   if (config.filename == NULL) {
-    temp_filename = editor_prompt("Save as: %s", "");
+    temp_filename = editor_prompt("Save as: %s (Esc to cancel)", "");
   } else {
-    temp_filename = editor_prompt("Save as: %s", config.filename);
+    temp_filename =
+        editor_prompt("Save as: %s (Esc to cancel)", config.filename);
   }
 
   if (temp_filename == NULL) {
