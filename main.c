@@ -22,6 +22,8 @@
 
 #define TAB_STOP 4
 
+#define FORCE_QUIT_TIMES 2
+
 /* ------ Types ------ */
 
 typedef struct erow {
@@ -42,9 +44,10 @@ struct conf {
   int rowoff;
   int coloff;
   int numrows;
+  int modified;
   erow *editor_rows;
   char *filename;
-  char status_msg[80];
+  char status_msg[160];
   time_t status_time;
   struct termios orig_termios;
 };
@@ -361,6 +364,7 @@ void append_erow(char *s, size_t len) {
   config.editor_rows[config.numrows] = new_row;
 
   config.numrows++;
+  config.modified++;
 }
 
 void insert_erow(int at, char *s, size_t len) {
@@ -385,6 +389,7 @@ void insert_erow(int at, char *s, size_t len) {
   config.editor_rows[at] = new_row;
 
   config.numrows++;
+  config.modified++;
 }
 
 void delete_erow(int at) {
@@ -398,6 +403,7 @@ void delete_erow(int at) {
   memmove(&config.editor_rows[at], &config.editor_rows[at + 1],
           sizeof(erow) * (config.numrows - at - 1));
   config.numrows--;
+  config.modified++;
 }
 
 int row_cx_to_rx(erow *row, int cx) {
@@ -423,6 +429,7 @@ void insert_char_at_row(erow *row, int at, char c) {
   row->size++;
   row->chars[at] = c;
   update_erow(row);
+  config.modified++;
 }
 
 void insert_str_at_row(erow *row, int at, char *c, size_t len) {
@@ -436,6 +443,7 @@ void insert_str_at_row(erow *row, int at, char *c, size_t len) {
 
   row->size += len;
   update_erow(row);
+  config.modified++;
 }
 
 void remove_char_at_row(erow *row, int at) {
@@ -445,6 +453,7 @@ void remove_char_at_row(erow *row, int at) {
   memmove(&row->chars[at], &row->chars[at + 1], row->size - at);
   row->size--;
   update_erow(row);
+  config.modified++;
 }
 
 void update_erow(erow *row) {
@@ -607,11 +616,11 @@ void set_status_msg(const char *fmt, ...) {
 void draw_status_line(struct ap_buf *buf) {
   ap_buf_append(buf, "\x1b[7m", 4);
 
-  char status[80], rstatus[80];
+  char status[160], rstatus[80];
 
-  int len =
-      snprintf(status, sizeof(status), "%.20s - %d lines",
-               config.filename ? config.filename : "[No Name]", config.numrows);
+  int len = snprintf(status, sizeof(status), "%.20s %s - %d lines",
+                     config.filename ? config.filename : "[No Name]",
+                     config.modified ? "(modified)" : "", config.numrows);
 
   int rlen = snprintf(rstatus, sizeof(rstatus), "%d/%d", config.cy + 1,
                       config.numrows);
@@ -797,6 +806,7 @@ void editor_open(char *filename) {
     append_erow(line, linelen);
   }
 
+  config.modified = 0;
   free(line);
   fclose(f);
 }
@@ -817,6 +827,7 @@ void editor_save() {
         free(buf);
 
         set_status_msg("%d bytes saved on %s.", len, config.filename);
+        config.modified = 0;
         return;
       }
     }
@@ -946,6 +957,7 @@ int read_input_key() {
 }
 
 void process_key_press() {
+  static int quit_count = FORCE_QUIT_TIMES;
   int key = read_input_key();
 
   switch (key) {
@@ -956,6 +968,14 @@ void process_key_press() {
   }
 
   case CTRL_KEY('q'): {
+    if (config.modified > 0 && quit_count > 0) {
+      set_status_msg("The file has unsaved changes, if you want to force quit "
+                     "press Ctrl-Q %d times more.",
+                     quit_count);
+      quit_count--;
+      return;
+    }
+
     clear_screen();
     move_cursor(0, 0);
     exit(0);
@@ -1010,6 +1030,8 @@ void process_key_press() {
     break;
   }
   }
+
+  quit_count = FORCE_QUIT_TIMES;
 }
 
 void die(const char *s) {
@@ -1030,6 +1052,7 @@ void init() {
   config.filename = NULL;
   config.status_msg[0] = '\0';
   config.status_time = 0;
+  config.modified = 0;
 
   if (get_term_size(&config.rows, &config.cols) == -1)
     die("get_term_size");
