@@ -325,6 +325,8 @@ int main(int argc, char *argv[]) {
     editor_open(argv[1]);
   }
 
+  set_status_msg("HELP: Ctrl-S = save | Ctrl-Q = quit");
+
   while (1) {
     refresh_screen();
     process_key_press();
@@ -810,6 +812,8 @@ void editor_save() {
       if (write(fd, buf, len) == len) {
         close(fd);
         free(buf);
+
+        set_status_msg("%d bytes saved on %s.", len, config.filename);
         return;
       }
     }
@@ -817,6 +821,7 @@ void editor_save() {
   }
 
   free(buf);
+  set_status_msg("Error on save: %s", strerror(errno));
 }
 
 void update_cursor_pos(int key) {
