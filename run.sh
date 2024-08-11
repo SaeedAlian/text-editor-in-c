@@ -1,3 +1,3 @@
 cmake .
 make
-./out/main.o
+./out/main.o test.txt
