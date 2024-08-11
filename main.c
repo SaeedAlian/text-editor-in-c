@@ -81,6 +81,13 @@ struct ap_buf {
 void append_erow(char *s, size_t len);
 
 /*
+ * Inserts a new editor row at the given position with
+ * the given string. It will receive the position, the string
+ * contents of the new row and the length of the string.
+ */
+void insert_erow(int at, char *s, size_t len);
+
+/*
  * Will delete a row at the given index.
  * It will free the row and move the rows on step backward.
  * It will receive the row index.
@@ -137,6 +144,13 @@ char *erows_to_str(int *buflen);
  * It will receive the character.
  */
 void insert_char(int c);
+
+/*
+ * Inserts a new line in the editor screen at the cursor position.
+ * If there is any remaining character at the front of the cursor,
+ * it will put them on the new line.
+ */
+void insert_new_line();
 
 /*
  * Deletes a character from the editor screen.
@@ -324,6 +338,30 @@ void append_erow(char *s, size_t len) {
   new_row.chars[len] = '\0';
   update_erow(&new_row);
   config.editor_rows[config.numrows] = new_row;
+
+  config.numrows++;
+}
+
+void insert_erow(int at, char *s, size_t len) {
+  if (at < 0 || at > config.numrows)
+    return;
+
+  config.editor_rows =
+      realloc(config.editor_rows, sizeof(erow) * (config.numrows + 1));
+
+  memmove(&config.editor_rows[at + 1], &config.editor_rows[at],
+          sizeof(erow) * (config.numrows - at));
+
+  erow new_row;
+  new_row.size = len;
+  new_row.chars = malloc(len + 1);
+  new_row.rsize = 0;
+  new_row.render = NULL;
+
+  memcpy(new_row.chars, s, len);
+  new_row.chars[len] = '\0';
+  update_erow(&new_row);
+  config.editor_rows[at] = new_row;
 
   config.numrows++;
 }
@@ -642,11 +680,28 @@ char *erows_to_str(int *buflen) {
 
 void insert_char(int c) {
   if (config.cy == config.numrows) {
-    append_erow("", 0);
+    insert_erow(config.numrows, "", 0);
   }
 
   insert_char_at_row(&config.editor_rows[config.cy], config.cx, c);
   config.cx++;
+}
+
+void insert_new_line() {
+  if (config.cx == 0) {
+    insert_erow(config.cy, "", 0);
+
+  } else {
+    erow *row = &config.editor_rows[config.cy];
+    insert_erow(config.cy + 1, &row->chars[config.cx], row->size - config.cx);
+    row = &config.editor_rows[config.cy];
+    row->size = config.cx;
+    row->chars[row->size] = '\0';
+    update_erow(row);
+  }
+
+  config.cy++;
+  config.cx = 0;
 }
 
 void delete_char() {
@@ -875,9 +930,10 @@ void process_key_press() {
     break;
   }
 
-  case '\r':
-    /* TODO */
+  case '\r': {
+    insert_new_line();
     break;
+  }
 
   case CTRL_KEY('l'):
   case '\x1b':
