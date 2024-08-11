@@ -34,6 +34,11 @@ typedef struct erow {
   char *render;
 } erow;
 
+typedef struct search_match {
+  int cx;
+  int cy;
+} search_match;
+
 /* ------ Editor config ------ */
 
 struct conf {
@@ -50,6 +55,9 @@ struct conf {
   char *filename;
   char status_msg[160];
   time_t status_time;
+  search_match *search_matches;
+  int search_match_found;
+  int current_search_idx;
   struct termios orig_termios;
 };
 
@@ -78,6 +86,48 @@ struct ap_buf {
 #define AP_BUF_INIT {NULL, 0}
 
 /* ------ Function declarations ------ */
+
+/* --- searching --- */
+
+/*
+ * Computes LPS array for KMP pattern matching algorithm.
+ */
+int *compute_lps(char *pattern, size_t len);
+
+/*
+ * KMP matching algorithm function.
+ * It will receive a string, a pattern, length of the string,
+ * length of the pattern and a integer pointer for setting the
+ * number of matches that has been found.
+ * It will return an array of integer containing the indexes
+ * which the pattern has been found within the string.
+ */
+int *kmp_matching(char *str, char *pattern, size_t slen, size_t plen,
+                  int *matches_len);
+
+/*
+ * It will prompt the user to enter a pattern for searching
+ * through the current file.
+ */
+void editor_search();
+
+/*
+ * It will move the cursor at the front of the matching pattern
+ * of the search result. It will receive the index of the matches.
+ */
+void move_cursor_to_search_match(int match_idx);
+
+/*
+ * Increments the match index for the search result.
+ * Also moves the cursor at that position.
+ */
+void increment_search();
+
+/*
+ * Decrements the match index for the search result.
+ * Also moves the cursor at that position.
+ */
+void decrement_search();
 
 /* --- editor rows --- */
 
@@ -114,6 +164,12 @@ void update_erow(erow *row);
  * It will receive the row pointer and the current cx.
  */
 int row_cx_to_rx(erow *row, int cx);
+
+/*
+ * Converts rx into cx by counting the tab stops.
+ * It will receive the row pointer and the current rx.
+ */
+int row_rx_to_cx(erow *row, int rx);
 
 /*
  * Inserts a character at the given row and the given
@@ -360,6 +416,148 @@ void move_cursor(int x, int y) {
   write(STDIN_FILENO, temp_buf, strlen(temp_buf));
 }
 
+int *compute_lps(char *pattern, size_t len) {
+  int i = 1;
+  int j = 0;
+  int *lps = malloc(sizeof(int) * len);
+  lps[0] = 0;
+
+  while (i < len) {
+    if (pattern[i] == pattern[j]) {
+      j++;
+      lps[i] = j;
+      i++;
+    } else {
+      if (j != 0) {
+        j = lps[j - 1];
+      } else {
+        i++;
+      }
+    }
+  }
+
+  return lps;
+}
+
+int *kmp_matching(char *str, char *pattern, size_t slen, size_t plen,
+                  int *matches_len) {
+  int matches_idx = 0;
+  int m_len = 5;
+  int *matches = malloc(sizeof(int) * m_len);
+
+  for (int i = 0; i < m_len; i++) {
+    matches[i] = -1;
+  }
+
+  int *lps = compute_lps(pattern, plen);
+
+  int i = 0;
+  int j = 0;
+
+  while ((slen - i) >= (plen - j)) {
+    if (i >= slen) {
+      free(lps);
+      return matches;
+    }
+
+    if (str[i] == pattern[j]) {
+      j++;
+      i++;
+    }
+
+    if (j == plen) {
+      if (matches_idx >= m_len - 1) {
+        m_len *= 2;
+        matches = realloc(matches, sizeof(int) * m_len);
+
+        for (int k = matches_idx; k < m_len; k++) {
+          matches[k] = -1;
+        }
+      }
+
+      matches[matches_idx++] = i - j;
+      j = 0;
+    } else if (i < slen && str[i] != pattern[j]) {
+      if (j != 0) {
+        j = lps[j - 1];
+      } else {
+        i++;
+      }
+    }
+  }
+
+  free(lps);
+  *matches_len = matches_idx;
+  return matches;
+}
+
+void editor_search() {
+  char *pattern = editor_prompt("Search: %s", "");
+
+  if (pattern == NULL)
+    return;
+
+  size_t plen = strlen(pattern);
+  if (config.search_matches) {
+    free(config.search_matches);
+  }
+
+  int matches_len = 10;
+  int found_match = 0;
+  config.search_matches = malloc(sizeof(search_match) * matches_len);
+
+  for (int i = 0; i < config.numrows; i++) {
+    erow *row = &config.editor_rows[i];
+    int m_len;
+    int *matches = kmp_matching(row->render, pattern, row->rsize, plen, &m_len);
+
+    if (m_len == 0)
+      continue;
+
+    for (int j = 0; j < m_len; j++) {
+      search_match new_match;
+      new_match.cx = row_rx_to_cx(row, matches[j] + plen);
+      new_match.cy = i;
+
+      if (matches_len - 1 <= found_match) {
+        matches_len *= 2;
+        config.search_matches =
+            realloc(config.search_matches, sizeof(search_match) * matches_len);
+      }
+
+      config.search_matches[found_match++] = new_match;
+    }
+  }
+
+  config.search_match_found = found_match;
+  move_cursor_to_search_match(0);
+}
+
+void move_cursor_to_search_match(int match_idx) {
+  if (match_idx < 0 || match_idx + 1 > config.search_match_found)
+    return;
+
+  search_match match = config.search_matches[match_idx];
+  config.cx = match.cx;
+  config.cy = match.cy;
+  config.current_search_idx = match_idx;
+}
+
+void increment_search() {
+  int new_idx = (config.current_search_idx + 1) % config.search_match_found;
+
+  move_cursor_to_search_match(new_idx);
+}
+
+void decrement_search() {
+  int new_idx =
+      config.current_search_idx == 0
+          ? config.search_match_found - 1
+          : (config.current_search_idx - 1) % config.search_match_found;
+
+  move_cursor_to_search_match(new_idx);
+}
+
 void append_erow(char *s, size_t len) {
   config.editor_rows =
       realloc(config.editor_rows, sizeof(erow) * (config.numrows + 1));
@@ -430,6 +628,24 @@ int row_cx_to_rx(erow *row, int cx) {
   }
 
   return rx;
+}
+
+int row_rx_to_cx(erow *row, int rx) {
+  int current_cx = 0;
+  int cx;
+
+  for (cx = 0; cx < row->size; cx++) {
+    if (row->chars[cx] == '\t') {
+      current_cx += (TAB_STOP - 1) - (current_cx % TAB_STOP);
+    }
+
+    current_cx++;
+
+    if (current_cx > rx)
+      return cx;
+  }
+
+  return cx;
 }
 
 void insert_char_at_row(erow *row, int at, char c) {
@@ -1041,6 +1257,21 @@ void process_key_press() {
     break;
   }
 
+  case CTRL_KEY('f'): {
+    editor_search();
+    break;
+  }
+
+  case CTRL_KEY('p'): {
+    decrement_search();
+    break;
+  }
+
+  case CTRL_KEY('n'): {
+    increment_search();
+    break;
+  }
+
   case CTRL_KEY('q'): {
     if (config.modified > 0 && quit_count > 0) {
       set_status_msg("The file has unsaved changes, if you want to force quit "
@@ -1048,6 +1279,10 @@ void process_key_press() {
                      quit_count);
       quit_count--;
       return;
+    }
+
+    if (config.search_matches) {
+      free(config.search_matches);
     }
 
     clear_screen();
@@ -1127,6 +1362,9 @@ void init() {
   config.status_msg[0] = '\0';
   config.status_time = 0;
   config.modified = 0;
+  config.search_matches = NULL;
+  config.search_match_found = -1;
+  config.current_search_idx = -1;
 
   if (get_term_size(&config.rows, &config.cols) == -1)
     die("get_term_size");
