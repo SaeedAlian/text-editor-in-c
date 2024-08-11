@@ -3,6 +3,7 @@
 #define _GNU_SOURCE
 
 #include <asm-generic/ioctls.h>
+#include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdarg.h>
@@ -167,6 +168,17 @@ void insert_new_line();
  * the cursor to the previous row.
  */
 void delete_char();
+
+/*
+ * Gives a prompt on the status message line for the user,
+ * and waits for the user to press enter, and the returns
+ * the value of that prompt. If user cancels the prompt
+ * with ESCAPE key it will return NULL pointer.
+ * It will receive the prompt and a default value for the prompt.
+ * Remember to include %s at the end of the prompt for the formatting
+ * to work properly.
+ */
+char *editor_prompt(char *prompt, char *default_value);
 
 /* --- appendable buffer --- */
 
@@ -784,6 +796,54 @@ void delete_char() {
   }
 }
 
+char *editor_prompt(char *prompt, char *default_value) {
+  size_t bufsize = 128;
+  size_t buflen = strlen(default_value);
+
+  while (buflen > bufsize) {
+    if (bufsize > 256)
+      break;
+    bufsize *= 2;
+  }
+
+  char *buf = malloc(bufsize);
+
+  for (int i = 0; i < buflen; i++) {
+    buf[i] = default_value[i];
+  }
+
+  buf[buflen] = '\0';
+
+  while (1) {
+    set_status_msg(prompt, buf);
+    refresh_screen();
+
+    int c = read_input_key();
+
+    if (c == DEL_KEY || c == BACKSPACE) {
+      if (buflen != 0)
+        buf[--buflen] = '\0';
+    } else if (c == '\x1b') {
+      set_status_msg("");
+      free(buf);
+      return NULL;
+    } else if (c == '\r') {
+      if (buflen != 0) {
+        set_status_msg("");
+        return buf;
+      }
+    } else if (!iscntrl(c) && c < 128) {
+      if (buflen == bufsize - 1) {
+        bufsize *= 2;
+        buf = realloc(buf, bufsize);
+      }
+
+      buf[buflen++] = c;
+      buf[buflen] = '\0';
+    }
+  }
+}
+
 void editor_open(char *filename) {
   free(config.filename);
   config.filename = strdup(filename);
@@ -812,21 +872,33 @@ void editor_open(char *filename) {
 }
 
 void editor_save() {
-  if (config.filename == NULL)
+  char *temp_filename = NULL;
+
+  if (config.filename == NULL) {
+    temp_filename = editor_prompt("Save as: %s", "");
+  } else {
+    temp_filename = editor_prompt("Save as: %s", config.filename);
+  }
+
+  if (temp_filename == NULL) {
+    set_status_msg("Save operation cancelled.");
     return;
+  }
 
   int len;
   char *buf = erows_to_str(&len);
 
-  int fd = open(config.filename, O_RDWR | O_CREAT, 0644);
+  int fd = open(temp_filename, O_RDWR | O_CREAT, 0644);
 
   if (fd != -1) {
     if (ftruncate(fd, len) != -1) {
       if (write(fd, buf, len) == len) {
         close(fd);
         free(buf);
+        config.filename = temp_filename;
 
         set_status_msg("%d bytes saved on %s.", len, config.filename);
+
         config.modified = 0;
         return;
       }
@@ -835,6 +907,7 @@ void editor_save() {
   }
 
   free(buf);
+  free(temp_filename);
   set_status_msg("Error on save: %s", strerror(errno));
 }
 
