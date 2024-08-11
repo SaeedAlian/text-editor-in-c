@@ -119,7 +119,7 @@ void insert_char_at_row(erow *row, int at, char c);
  * position. It will receive the row pointer, position index,
  * the string and the length of the string.
  */
-void insert_str_at_row(erow *row, int at, char *c, int len);
+void insert_str_at_row(erow *row, int at, char *c, size_t len);
 
 /*
  * Removes a character at the given row and the given position.
@@ -167,7 +167,7 @@ void delete_char();
  * Append a string to the appendable buffer. It will receive
  * the buffer struct pointer, new string and the new string length.
  */
-void ap_buf_append(struct ap_buf *buf, const char *s, int len);
+void ap_buf_append(struct ap_buf *buf, const char *s, size_t len);
 
 /*
  * Free the buffer of the appendable buffer struct. It will receive
@@ -404,7 +404,7 @@ void insert_char_at_row(erow *row, int at, char c) {
   update_erow(row);
 }
 
-void insert_str_at_row(erow *row, int at, char *c, int len) {
+void insert_str_at_row(erow *row, int at, char *c, size_t len) {
   if (at < 0 || at > row->size)
     return;
 
@@ -453,7 +453,7 @@ void update_erow(erow *row) {
   row->rsize = j;
 }
 
-void ap_buf_append(struct ap_buf *buf, const char *s, int len) {
+void ap_buf_append(struct ap_buf *buf, const char *s, size_t len) {
   char *new = realloc(buf->b, buf->len + len);
 
   if (new == NULL)
