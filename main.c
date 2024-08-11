@@ -5,11 +5,13 @@
 #include <asm-generic/ioctls.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <termios.h>
+#include <time.h>
 #include <unistd.h>
 
 /* ------ Macros and definitions ------ */
@@ -42,6 +44,8 @@ struct conf {
   int numrows;
   erow *editor_rows;
   char *filename;
+  char status_msg[80];
+  time_t status_time;
   struct termios orig_termios;
 };
 
@@ -213,10 +217,25 @@ void update_cursor_pos(int key);
 void update_scroll();
 
 /*
+ * Sets the status message based on the given formatted string.
+ * Also updates the status time.
+ * It will receive the formatted string alongside with the
+ * string arguments.
+ */
+void set_status_msg(const char *fmt, ...);
+
+/*
  * Draws the status line in the bottom of the terminal screen.
  * It will receive the appendable buffer pointer.
  */
 void draw_status_line(struct ap_buf *buf);
+
+/*
+ * It will draw the status line for showing the status message
+ * below the main status line.
+ * It will receive the appendable buffer pointer.
+ */
+void draw_status_msg_line(struct ap_buf *buf);
 
 /*
  * Refresh the screen by first hiding the cursor,
@@ -575,6 +594,14 @@ void update_scroll() {
   }
 }
 
+void set_status_msg(const char *fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+  vsnprintf(config.status_msg, sizeof(config.status_msg), fmt, ap);
+  va_end(ap);
+  config.status_time = time(NULL);
+}
+
 void draw_status_line(struct ap_buf *buf) {
   ap_buf_append(buf, "\x1b[7m", 4);
 
@@ -603,6 +630,19 @@ void draw_status_line(struct ap_buf *buf) {
   }
 
   ap_buf_append(buf, "\x1b[m", 3);
+  ap_buf_append(buf, "\r\n", 2);
+}
+
+void draw_status_msg_line(struct ap_buf *buf) {
+  ap_buf_append(buf, "\x1b[K", 3);
+  int msg_len = strlen(config.status_msg);
+
+  if (msg_len > config.cols)
+    msg_len = config.cols;
+
+  if (msg_len && time(NULL) - config.status_time < 7) {
+    ap_buf_append(buf, config.status_msg, msg_len);
+  }
 }
 
 void refresh_screen() {
@@ -618,6 +658,7 @@ void refresh_screen() {
 
   draw_rows(&buf);
   draw_status_line(&buf);
+  draw_status_msg_line(&buf);
 
   // moves cursor to the defined position in the config struct
   char temp_buf[32];
@@ -979,9 +1020,11 @@ void init() {
   config.rowoff = 0;
   config.coloff = 0;
   config.filename = NULL;
+  config.status_msg[0] = '\0';
+  config.status_time = 0;
 
   if (get_term_size(&config.rows, &config.cols) == -1)
     die("get_term_size");
 
-  config.rows -= 1;
+  config.rows -= 2;
 }
