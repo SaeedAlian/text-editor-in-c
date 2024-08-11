@@ -269,7 +269,7 @@ void clear_screen();
  * It will force write to the screen to move the cursor to the given position.
  * This function will use the write function immediately,
  * and it won't use the appendable buffer.
- * It will receive the x and y of the position
+ * It will receive the x and y of the position.
  */
 void move_cursor(int x, int y);
 
@@ -335,12 +335,12 @@ int get_term_size(int *rows, int *cols);
 /* --- raw mode --- */
 
 /*
- * Disables the raw mode in the terminal
+ * Disables the raw mode in the terminal.
  */
 void disable_raw_mode();
 
 /*
- * Enables the raw mode in the terminal
+ * Enables the raw mode in the terminal.
  */
 void enable_raw_mode();
 
