@@ -244,12 +244,6 @@ char *editor_prompt(char *prompt, char *default_value);
  */
 void ap_buf_append(struct ap_buf *buf, const char *s, size_t len);
 
-/*
- * Free the buffer of the appendable buffer struct. It will receive
- * the buffer struct pointer.
- */
-void free_ap_buf(struct ap_buf *buf);
-
 /* --- screen update --- */
 
 /*
@@ -909,7 +903,7 @@ void refresh_screen() {
   ap_buf_append(&buf, "\x1b[?25h", 6);
 
   write(STDIN_FILENO, buf.b, buf.len);
-  free_ap_buf(&buf);
+  free(buf.b);
 }
 
 void disable_raw_mode() {
