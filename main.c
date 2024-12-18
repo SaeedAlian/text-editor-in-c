@@ -6,6 +6,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <signal.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -326,6 +327,11 @@ int get_cursor_pos(int *rows, int *cols);
  */
 int get_term_size(int *rows, int *cols);
 
+/*
+ * Resets the terminal sizes.
+ */
+void handle_term_resize();
+
 /* --- raw mode --- */
 
 /*
@@ -383,6 +389,7 @@ void init();
 /* --- Main function --- */
 
 int main(int argc, char *argv[]) {
+  signal(SIGWINCH, handle_term_resize);
   enable_raw_mode();
   init();
 
@@ -757,6 +764,17 @@ int get_term_size(int *rows, int *cols) {
       return -1;
     return get_cursor_pos(rows, cols);
   }
+}
+
+void handle_term_resize() {
+
+  if (get_term_size(&config.rows, &config.cols) == -1)
+    die("get_term_size");
+  // Clear the screen
+  write(STDOUT_FILENO, "\x1b[2J", 4); // Clear the entire screen
+  write(STDOUT_FILENO, "\x1b[H", 3);  // Move cursor to the top-left corner
+
+  refresh_screen();
 }
 
 void draw_rows(struct ap_buf *buf) {
@@ -1245,6 +1263,11 @@ void process_key_press() {
 
   case CTRL_KEY('w'): {
     editor_save();
+    break;
+  }
+
+  case CTRL_KEY('r'): {
+    handle_term_resize();
     break;
   }
 
