@@ -716,8 +716,6 @@ void ap_buf_append(struct ap_buf *buf, const char *s, size_t len) {
   buf->len += len;
 }
 
-void free_ap_buf(struct ap_buf *buf) { free(buf->b); }
-
 int get_cursor_pos(int *rows, int *cols) {
   char buf[32];
   unsigned int i = 0;
@@ -782,7 +780,6 @@ void draw_rows(struct ap_buf *buf) {
 
         ap_buf_append(buf, welcome, welcome_len);
       } else {
-
         ap_buf_append(buf, "~", 1);
       }
     } else {
