@@ -1073,10 +1073,16 @@ void editor_open(char *filename) {
   free(config.filename);
   config.filename = strdup(filename);
 
-  FILE *f = fopen(filename, "r");
+  FILE *f = NULL;
 
-  if (!f)
-    die("fopen");
+  f = fopen(filename, "r");
+
+  if (!f) {
+    f = fopen(filename, "w");
+
+    if (!f)
+      die("fopen");
+  }
 
   char *line = NULL;
   size_t linecap = 0;
